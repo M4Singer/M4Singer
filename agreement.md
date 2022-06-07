@@ -7,6 +7,8 @@
 
 ......
 
-Party B shall ensure that the services provided do not infringe any third-party intellectual property rights, otherwise Party B shall be responsible for resolving disputes and compensating for all losses caused to Party A. All data provided by Party A and all data marked products produced by Party B for this project are owned by Party A.
+Party B shall ensure that the services provided do not infringe any third-party intellectual property rights, 
+otherwise Party B shall be responsible for resolving disputes and compensating for all losses caused to Party A.
+The ownership and the intellectual property of all the data products made by Part B as well as the data provided by Part A are all owned by Part A.
 
 ......
