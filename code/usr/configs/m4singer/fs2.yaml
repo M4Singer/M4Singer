@@ -1,0 +1,19 @@
+base_config:
+  - usr/configs/m4singer/base.yaml
+shuffle: true
+
+task_cls: tasks.tts.fs2.FastSpeech2Task
+
+save_gt: true
+max_tokens: 40000
+rel_pos: true
+max_updates: 100000
+max_sentences: 10
+
+lr: 1
+max_frames: 5000
+use_pitch_embed: true
+lambda_f0: 1.0
+lambda_uv: 1.0
+
+

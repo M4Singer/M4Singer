@@ -1,0 +1,19 @@
+base_config:
+  - usr/configs/m4singer/base.yaml
+
+shuffle: true
+
+task_cls: usr.diffsinger_task.DiffSingerMIDITask
+
+save_gt: true
+fs2_ckpt: 'checkpoints/fs2_m4singer'
+
+max_updates: 200000
+gaussian_start: true
+max_sentences: 1000
+max_frames: 5000
+
+use_pitch_embed: true
+
+K_step: 300
+timesteps: 300
