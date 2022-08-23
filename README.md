@@ -10,6 +10,6 @@ Come and enjoy the journey of music!
 We adopt the application form for data management (see _*How can we get M4Singer?*_ in the paper for the reasons).
 
 Data acquisition proceeds through the following steps:
-- Send application form to apply4m4singer@gmail.com (see [apply form](https://github.com/M4Singer/M4Singer/blob/main/apply_form.md));
+- Send application form to apply4m4singer@gmail.com (see [apply form](https://github.com/M4Singer/M4Singer/blob/master/apply_form.md));
 - Application gets approved;
 - Get download link.
