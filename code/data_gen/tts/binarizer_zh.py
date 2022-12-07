@@ -19,6 +19,7 @@ class ZhBinarizer(BaseBinarizer):
         ph_list = ph.split(" ")
         assert len(dur) == len(ph_list)
         mel2ph = []
+        # 分隔符的时长分配给韵母
         dur_cumsum = np.pad(np.cumsum(dur), [1, 0], mode='constant', constant_values=0)
         for i in range(len(dur)):
             p = ph_list[i]
@@ -32,6 +33,7 @@ class ZhBinarizer(BaseBinarizer):
                 if dur[i] < 100:
                     dur[i - 1] += dur[i]
                     dur[i] = 0
+        # 声母和韵母等长
         for i in range(len(dur)):
             p = ph_list[i]
             if p in ALL_SHENMU:

@@ -4,7 +4,7 @@ from utils.hparams import hparams
 import numpy as np
 
 
-def denoise(wav, v=0.1):
+def denoise(wav, v=0):
     spec = librosa.stft(y=wav, n_fft=hparams['fft_size'], hop_length=hparams['hop_size'],
                         win_length=hparams['win_size'], pad_mode='constant')
     spec_m = np.abs(spec)

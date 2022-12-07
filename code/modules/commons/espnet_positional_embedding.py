@@ -86,7 +86,7 @@ class ScaledPositionalEncoding(PositionalEncoding):
         return self.dropout(x)
 
 
-class RelPositionalEncoding_Conformer(PositionalEncoding):
+class RelPositionalEncoding(PositionalEncoding):
     """Relative positional encoding module.
     See : Appendix B in https://arxiv.org/abs/1901.02860
     Args:
@@ -110,9 +110,4 @@ class RelPositionalEncoding_Conformer(PositionalEncoding):
         self.extend_pe(x)
         x = x * self.xscale
         pos_emb = self.pe[:, : x.size(1)]
-        return self.dropout(x), self.dropout(pos_emb)
-
-class RelPositionalEncoding_FastSpeech(RelPositionalEncoding_Conformer):
-    def forward(self, x):
-        x, pos = super(RelPositionalEncoding_FastSpeech, self).forward(x)
-        return x + pos
+        return self.dropout(x) + self.dropout(pos_emb)

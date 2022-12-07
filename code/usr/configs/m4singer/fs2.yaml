@@ -1,19 +1,16 @@
 base_config:
+  - configs/singing/fs2.yaml
   - usr/configs/m4singer/base.yaml
-shuffle: true
+task_cls: usr.diffsinger_task.AuxDecoderMIDITask
 
-task_cls: tasks.tts.fs2.FastSpeech2Task
-
-save_gt: true
+max_frames: 5000
 max_tokens: 40000
 rel_pos: true
-max_updates: 100000
-max_sentences: 10
 
+use_pitch_embed: false
+num_valid_plots: 10
+max_updates: 320000
 lr: 1
-max_frames: 5000
-use_pitch_embed: true
-lambda_f0: 1.0
-lambda_uv: 1.0
-
-
+max_sentences: 12
+save_gt: true
+pe_enable: true

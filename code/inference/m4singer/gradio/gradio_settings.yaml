@@ -1,0 +1,43 @@
+title: 'M4Singer'
+description: |
+  This page aims to display the SVS function of M4Singer. SingerID can be switched freely to preview the timbre of each singer. Click examples below to quickly load scores and audio. （本页面为M4Singer歌声合成功能展示。SingerID可以自由切换用以预览各歌手的音色。点击下方Examples可以快速加载乐谱和音频。）
+
+  Please assign pitch and duration values to each Chinese character. The corresponding pitch and duration value of each character should be separated by a | separator. It is necessary to ensure that the note window separated by the separator is consistent with the number of Chinese characters (AP or SP is also viewed as a Chinese character). (请给每个汉字分配音高和时值, 每个字对应的音高和时值需要用|分隔符隔开。需要保证分隔符分割出来的音符窗口与汉字个数(AP或SP也算一个汉字)一致。)
+
+  Note: This page is running on CPU, please refer to github for the local running solutions.（注意：本页面使用CPU推理，本地运行方案请参考<a href='https://github.com/M4Singer/M4Singer' style='color:blue;' target='_blank\'>Github REPO</a>。）
+article: |
+  Link to <a href='https://github.com/M4Singer/M4Singer' style='color:blue;' target='_blank\'>Github REPO</a>
+
+  If our work is useful for your research, please consider citing:
+  ```bibtex
+  @inproceedings{
+    zhang2022msinger,
+    title={M4Singer: A Multi-Style, Multi-Singer and Musical Score Provided Mandarin Singing Corpus},
+    author={Lichao Zhang and Ruiqi Li and Shoutong Wang and Liqun Deng and Jinglin Liu and Yi Ren and Jinzheng He and Rongjie Huang and Jieming Zhu and Xiao Chen and Zhou Zhao},
+    booktitle={Thirty-sixth Conference on Neural Information Processing Systems Datasets and Benchmarks Track},
+    year={2022},
+  }
+  ```
+
+  ![visitors](https://visitor-badge.laobi.icu/badge?page_id=zlc99/M4Singer)
+example_inputs:
+  - |-
+    Tenor-1<sep>AP你要相信AP相信我们会像童话故事里AP<sep>rest | G#3 | A#3 C4 | D#4 | D#4 F4 | rest | E4 F4 | F4 | D#4 A#3 | A#3 | A#3 | C#4 | B3 C4 | C#4 | B3 C4 | A#3 | G#3 | rest<sep>0.14 | 0.47 | 0.1905 0.1895 | 0.41 | 0.3005 0.3895 | 0.21 | 0.2391 0.1809 | 0.32 | 0.4105 0.2095 | 0.35 | 0.43 | 0.45 | 0.2309 0.2291 | 0.48 | 0.225 0.195 | 0.29 | 0.71 | 0.14
+  - |-
+    Tenor-1<sep>AP因为在一千年以后AP世界早已没有我AP<sep>rest | C#4 | D4 | E4 | F#4 | E4 | D4 G#3 | A3 | D4 E4 | rest | F#4 | E4 | D4 | C#4 | B3 F#3 | F#3 | C4 C#4 | rest<sep>0.18 | 0.32 | 0.38 | 0.81 | 0.38 | 0.39 | 0.3155 0.2045 | 0.28 | 0.4609 1.0291 | 0.27 | 0.42 | 0.15 | 0.53 | 0.22 | 0.3059 0.2841 | 0.4 | 0.2909 1.1091 | 0.3
+  - |-
+    Tenor-2<sep>AP可是你在敲打AP我的窗棂AP<sep>rest | G#3 | B3 | B3 C#4 | E4 | C#4 B3 | G#3 | rest | C3 | E3 | B3 G#3 | F#3 | rest<sep>0.2 | 0.38 | 0.48 | 0.41 0.72 | 0.39 | 0.5195 0.2905 | 0.5 | 0.33 | 0.4 | 0.31 | 0.565 0.265 | 1.15 | 0.24
+  - |-
+    Tenor-2<sep>SP一杯敬朝阳一杯敬月光AP<sep>rest | G#3 | G#3 | G#3 | G3 | G3 G#3 | G3 | C4 | C4 | A#3 | C4 | rest<sep>0.33 | 0.26 | 0.23 | 0.27 | 0.36 | 0.3159 0.4041 | 0.54 | 0.21 | 0.32 | 0.24 | 0.58 | 0.17
+  - |-
+    Soprano-1<sep>SP乱石穿空AP惊涛拍岸AP<sep>rest | C#5 | D#5 | F5 D#5 | C#5 | rest | C#5 | C#5 | C#5 G#4 | G#4 | rest<sep>0.325 | 0.75 | 0.54 | 0.48 0.55 | 1.38 | 0.31 | 0.55 | 0.48 | 0.4891 0.4709 | 1.15 | 0.22
+  - |-
+    Soprano-1<sep>AP点点滴滴染绿了村寨AP<sep>rest | C5 | A#4 | C5 | D#5 F5 D#5 | D#5 | C5 | C5 | C5 | A#4 | rest<sep>0.175 | 0.24 | 0.26 | 1.08 | 0.3541 0.4364 0.2195 | 0.47 | 0.27 | 0.12 | 0.51 | 0.72 | 0.15
+  - |-
+    Alto-2<sep>AP拒绝声色的张扬AP不拒绝你AP<sep>rest | C4 | C4 | C4 | B3 A3 | C4 | C4 D4 | D4 | rest | D4 | D4 | C4 | G4 E4 | rest<sep>0.49 | 0.31 | 0.18 | 0.48 | 0.3 0.4 | 0.25 | 0.3591 0.2409 | 0.46 | 0.34 | 0.4 | 0.45 | 0.45 | 2.4545 0.9855 | 0.215
+  - |-
+    Alto-2<sep>AP半醒着AP笑着哭着都快活AP<sep>rest | D4 | B3 | C4 D4 | rest | E4 | D4 | E4 | D4 | E4 | E4 F#4 | F4 F#4 | rest<sep>0.165 | 0.45 | 0.53 | 0.3859 0.2441 | 0.35 | 0.38 | 0.17 | 0.32 | 0.26 | 0.33 | 0.38 0.21 | 0.3309 0.9491 | 0.125
+
+
+inference_cls: inference.m4singer.ds_e2e.DiffSingerE2EInfer
+exp_name: m4singer_diff_e2e

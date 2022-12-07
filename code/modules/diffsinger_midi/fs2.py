@@ -6,7 +6,7 @@ from utils.cwt import cwt2f0
 from utils.hparams import hparams
 from utils.pitch_utils import f0_to_coarse, denorm_f0, norm_f0
 from modules.fastspeech.fs2 import FastSpeech2
-from tasks.tts.fs2_utils import FastSpeechDataset
+
 
 class FastspeechMIDIEncoder(FastspeechEncoder):
     def forward_embedding(self, txt_tokens, midi_embedding, midi_dur_embedding, slur_embedding):
@@ -24,6 +24,7 @@ class FastspeechMIDIEncoder(FastspeechEncoder):
 
     def forward(self, txt_tokens, midi_embedding, midi_dur_embedding, slur_embedding):
         """
+
         :param txt_tokens: [B, T]
         :return: {
             'encoder_out': [T x B x C]
@@ -42,7 +43,6 @@ FS_ENCODERS = {
 }
 
 
-
 class FastSpeech2MIDI(FastSpeech2):
     def __init__(self, dictionary, out_dims=None):
         super().__init__(dictionary, out_dims)
@@ -51,7 +51,6 @@ class FastSpeech2MIDI(FastSpeech2):
         self.midi_embed = Embedding(300, self.hidden_size, self.padding_idx)
         self.midi_dur_layer = Linear(1, self.hidden_size)
         self.is_slur_embed = Embedding(2, self.hidden_size)
-
 
     def forward(self, txt_tokens, mel2ph=None, spk_embed=None,
                 ref_mels=None, f0=None, uv=None, energy=None, skip_decoder=False,

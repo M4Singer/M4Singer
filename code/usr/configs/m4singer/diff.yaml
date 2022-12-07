@@ -1,19 +1,33 @@
 base_config:
   - usr/configs/m4singer/base.yaml
 
-shuffle: true
+use_midi: true  #  for midi exp
+use_gt_f0: false  #  for midi exp
+use_gt_dur: false  # for further midi exp
+lambda_ph_dur: 1.0
+lambda_sent_dur: 1.0
+lambda_word_dur: 1.0
+predictor_grad: 0.1
 
+fs2_ckpt: 'checkpoints/m4singer_fs2_e2e'
 task_cls: usr.diffsinger_task.DiffSingerMIDITask
 
-save_gt: true
-fs2_ckpt: 'checkpoints/fs2_m4singer'
+# for diffusion schedule
+timesteps: 1000
+K_step: 1000
+max_beta: 0.02
+max_tokens: 36000
+max_updates: 900000
+max_sentences: 28
+gaussian_start: True
+pndm_speedup: 5
 
-max_updates: 200000
-gaussian_start: true
-max_sentences: 1000
-max_frames: 5000
-
-use_pitch_embed: true
-
-K_step: 300
-timesteps: 300
+use_pitch_embed: false
+decay_steps: 100000
+lambda_f0: 0.
+lambda_uv: 0.
+dilation_cycle_length: 4
+residual_layers: 20
+residual_channels: 256
+rel_pos: true
+pe_enable: true

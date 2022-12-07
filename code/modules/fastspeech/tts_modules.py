@@ -5,10 +5,8 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
-from modules.commons.espnet_positional_embedding import RelPositionalEncoding_FastSpeech
-from modules.commons.common_layers import ConvNorm, Embedding
+from modules.commons.espnet_positional_embedding import RelPositionalEncoding
 from modules.commons.common_layers import SinusoidalPositionalEmbedding, Linear, EncSALayer, DecSALayer, BatchNorm1dTBC
-from modules.commons.mixture import sample_from_mixture
 from utils.hparams import hparams
 
 DEFAULT_MAX_SOURCE_POSITIONS = 2000
@@ -31,7 +29,6 @@ class TransformerEncoderLayer(nn.Module):
 
     def forward(self, x, **kwargs):
         return self.op(x, **kwargs)
-
 
 
 ######################
@@ -154,33 +151,6 @@ class DurationPredictor(torch.nn.Module):
         return self._forward(xs, x_masks, True)
 
 
-def pad_list(xs, pad_value, max_len=None):
-    """Perform padding for the list of tensors.
-    Args:
-        xs (List): List of Tensors [(T_1, `*`), (T_2, `*`), ..., (T_B, `*`)].
-        pad_value (float): Value for padding.
-    Returns:
-        Tensor: Padded tensor (B, Tmax, `*`).
-    Examples:
-        >>> x = [torch.ones(4), torch.ones(2), torch.ones(1)]
-        >>> x
-        [tensor([1., 1., 1., 1.]), tensor([1., 1.]), tensor([1.])]
-        >>> pad_list(x, 0)
-        tensor([[1., 1., 1., 1.],
-                [1., 1., 0., 0.],
-                [1., 0., 0., 0.]])
-    """
-    n_batch = len(xs)
-    if max_len is None:
-        max_len = max(x.size(0) for x in xs)
-    pad = xs[0].new(n_batch, max_len, *xs[0].size()[1:]).fill_(pad_value)
-
-    for i in range(n_batch):
-        pad[i, :min(xs[i].size(0), max_len)] = xs[i][:max_len]
-
-    return pad
-
-
 class LengthRegulator(torch.nn.Module):
     def __init__(self, pad_value=0.0):
         super(LengthRegulator, self).__init__()
@@ -269,35 +239,6 @@ class EnergyPredictor(PitchPredictor):
     pass
 
 
-class StatsPredictor(nn.Module):
-    def __init__(self, c_in=256, c_out=1):
-        super().__init__()
-        self.conv1 = nn.Sequential(
-            nn.Conv1d(c_in, c_in, 3, 2),
-            nn.ReLU(), nn.BatchNorm1d(c_in)
-        )
-        self.conv2 = nn.Sequential(
-            nn.Conv1d(c_in, c_in, 3, 2),
-            nn.ReLU(), nn.BatchNorm1d(c_in)
-        )
-        self.conv3 = nn.Sequential(
-            nn.Conv1d(c_in, c_in, 3, 1)
-        )
-        self.out = Linear(c_in, c_out, bias=True)
-
-    def forward(self, x):
-        """
-
-        :param x: [B, T, H]
-        :return: [B, c_out]
-        """
-        x = x.transpose(1, 2)
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = self.conv3(x)
-        return self.out(x.mean(-1))
-
-
 def mel2ph_to_dur(mel2ph, T_txt, max_dur=None):
     B, _ = mel2ph.shape
     dur = mel2ph.new_zeros(B, T_txt + 1).scatter_add(1, mel2ph, torch.ones_like(mel2ph))
@@ -377,7 +318,7 @@ class FastspeechEncoder(FFTBlocks):
         self.embed_scale = math.sqrt(hidden_size)
         self.padding_idx = 0
         if hparams.get('rel_pos') is not None and hparams['rel_pos']:
-            self.embed_positions = RelPositionalEncoding_FastSpeech(hidden_size, dropout_rate=0.0)
+            self.embed_positions = RelPositionalEncoding(hidden_size, dropout_rate=0.0)
         else:
             self.embed_positions = SinusoidalPositionalEmbedding(
                 hidden_size, self.padding_idx, init_size=DEFAULT_MAX_TARGET_POSITIONS,
@@ -400,11 +341,8 @@ class FastspeechEncoder(FFTBlocks):
         # embed tokens and positions
         x = self.embed_scale * self.embed_tokens(txt_tokens)
         if hparams['use_pos_embed']:
-            if hparams.get('rel_pos') is not None and hparams['rel_pos']:
-                x = self.embed_positions(x)
-            else:
-                positions = self.embed_positions(txt_tokens)
-                x = x + positions
+            positions = self.embed_positions(txt_tokens)
+            x = x + positions
         x = F.dropout(x, p=self.dropout, training=self.training)
         return x
 
@@ -416,3 +354,4 @@ class FastspeechDecoder(FFTBlocks):
         kernel_size = hparams['dec_ffn_kernel_size'] if kernel_size is None else kernel_size
         num_layers = hparams['dec_layers'] if num_layers is None else num_layers
         super().__init__(hidden_size, num_layers, kernel_size, num_heads=num_heads)
+

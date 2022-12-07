@@ -15,7 +15,7 @@ from usr.diff.candidate_decoder import FFT
 from utils.pitch_utils import denorm_f0
 from tasks.tts.fs2_utils import FastSpeechDataset
 from tasks.tts.fs2 import FastSpeech2Task
-from tasks.tts.fs2 import MIDIDataset
+
 import numpy as np
 import os
 import torch.nn.functional as F
@@ -33,7 +33,7 @@ class DiffSingerTask(DiffSpeechTask):
         self.dataset_cls = FastSpeechDataset
         self.vocoder: BaseVocoder = get_vocoder_cls(hparams)()
         if hparams.get('pe_enable') is not None and hparams['pe_enable']:
-            self.pe = PitchExtractor(conv_layers=2).cuda()
+            self.pe = PitchExtractor().cuda()
             utils.load_ckpt(self.pe, hparams['pe_ckpt'], 'model', strict=True)
             self.pe.eval()
 
@@ -60,8 +60,8 @@ class DiffSingerTask(DiffSpeechTask):
         if hparams['fs2_ckpt'] != '':
             utils.load_ckpt(self.model.fs2, hparams['fs2_ckpt'], 'model', strict=True)
             # self.model.fs2.decoder = None
-            for k, v in self.model.fs2.named_parameters():
-                v.requires_grad = False
+            #for k, v in self.model.fs2.named_parameters():
+            #    v.requires_grad = False
 
     def validation_step(self, sample, batch_idx):
         outputs = {}
@@ -185,6 +185,7 @@ class DiffSingerOfflineTask(DiffSingerTask):
 
         outputs['losses'], model_out = self.run_model(self.model, sample, return_output=True, infer=False)
 
+
         outputs['total_loss'] = sum(outputs['losses'].values())
         outputs['nsamples'] = sample['nsamples']
         outputs = utils.tensors_to_scalars(outputs)
@@ -233,11 +234,48 @@ class DiffSingerOfflineTask(DiffSingerTask):
             return self.after_infer(sample)
 
 
+class MIDIDataset(FastSpeechDataset):
+    def __getitem__(self, index):
+        sample = super(MIDIDataset, self).__getitem__(index)
+        item = self._get_item(index)
+        sample['f0_midi'] = torch.FloatTensor(item['f0_midi'])
+        sample['pitch_midi'] = torch.LongTensor(item['pitch_midi'])[:hparams['max_frames']]
+
+        return sample
+
+    def collater(self, samples):
+        batch = super(MIDIDataset, self).collater(samples)
+        batch['f0_midi'] = utils.collate_1d([s['f0_midi'] for s in samples], 0.0)
+        batch['pitch_midi'] = utils.collate_1d([s['pitch_midi'] for s in samples], 0)
+        # print((batch['pitch_midi'] == f0_to_coarse(batch['f0_midi'])).all())
+        return batch
+
+
+class M4SingerDataset(FastSpeechDataset):
+    def __getitem__(self, index):
+        sample = super(M4SingerDataset, self).__getitem__(index)
+        item = self._get_item(index)
+        sample['pitch_midi'] = torch.LongTensor(item['pitch_midi'])
+        sample['midi_dur'] = torch.FloatTensor(item['midi_dur'])
+        sample['is_slur'] = torch.LongTensor(item['is_slur'])
+        sample['word_boundary'] = torch.LongTensor(item['word_boundary'])
+        return sample
+
+    def collater(self, samples):
+        batch = super(M4SingerDataset, self).collater(samples)
+        batch['pitch_midi'] = utils.collate_1d([s['pitch_midi'] for s in samples], 0)
+        batch['midi_dur'] = utils.collate_1d([s['midi_dur'] for s in samples], 0)
+        batch['is_slur'] = utils.collate_1d([s['is_slur'] for s in samples], 0)
+        batch['word_boundary'] = utils.collate_1d([s['word_boundary'] for s in samples], 0)
+        return batch
+
 
 class DiffSingerMIDITask(DiffSingerTask):
     def __init__(self):
         super(DiffSingerMIDITask, self).__init__()
-        self.dataset_cls = MIDIDataset
+        # self.dataset_cls = MIDIDataset
+        self.dataset_cls = M4SingerDataset
+
     def run_model(self, model, sample, return_output=False, infer=False):
         txt_tokens = sample['txt_tokens']  # [B, T_t]
         target = sample['mels']  # [B, T_s, 80]
@@ -292,7 +330,7 @@ class DiffSingerMIDITask(DiffSingerTask):
         outputs['total_loss'] = sum(outputs['losses'].values())
         outputs['nsamples'] = sample['nsamples']
         outputs = utils.tensors_to_scalars(outputs)
-        if batch_idx < hparams['num_valid_plots']:
+        if batch_idx % 20 == 0 and batch_idx // 20 < hparams['num_valid_plots']:
             model_out = self.model(
                 txt_tokens, spk_embed=spk_embed, mel2ph=mel2ph, f0=None, uv=None, energy=energy, ref_mels=None, infer=True,
                 pitch_midi=sample['pitch_midi'], midi_dur=sample.get('midi_dur'), is_slur=sample.get('is_slur'))
@@ -303,7 +341,6 @@ class DiffSingerMIDITask(DiffSingerTask):
             else:
                 gt_f0 = denorm_f0(sample['f0'], sample['uv'], hparams)
                 pred_f0 = model_out.get('f0_denorm')
-            # tensor board
             self.plot_wav(batch_idx, sample['mels'], model_out['mel_out'], is_mel=True, gt_f0=gt_f0, f0=pred_f0)
             self.plot_mel(batch_idx, sample['mels'], model_out['mel_out'], name=f'diffmel_{batch_idx}')
             self.plot_mel(batch_idx, sample['mels'], model_out['fs2_mel'], name=f'fs2mel_{batch_idx}')
@@ -327,14 +364,13 @@ class DiffSingerMIDITask(DiffSingerTask):
             is_sil = is_sil | (txt_tokens == self.phone_encoder.encode(p)[0])
         is_sil = is_sil.float()  # [B, T_txt]
 
-        if hparams['lambda_ph_dur'] > 0:
-            # phone duration loss
-            if hparams['dur_loss'] == 'mse':
-                losses['pdur'] = F.mse_loss(dur_pred, (dur_gt + 1).log(), reduction='none')
-                losses['pdur'] = (losses['pdur'] * nonpadding).sum() / nonpadding.sum()
-                dur_pred = (dur_pred.exp() - 1).clamp(min=0)
-            else:
-                raise NotImplementedError
+        # phone duration loss
+        if hparams['dur_loss'] == 'mse':
+            losses['pdur'] = F.mse_loss(dur_pred, (dur_gt + 1).log(), reduction='none')
+            losses['pdur'] = (losses['pdur'] * nonpadding).sum() / nonpadding.sum()
+            dur_pred = (dur_pred.exp() - 1).clamp(min=0)
+        else:
+            raise NotImplementedError
 
         # use linear scale for sent and word duration
         if hparams['lambda_word_dur'] > 0:
@@ -356,7 +392,8 @@ class DiffSingerMIDITask(DiffSingerTask):
 class AuxDecoderMIDITask(FastSpeech2Task):
     def __init__(self):
         super().__init__()
-        self.dataset_cls = MIDIDataset
+        # self.dataset_cls = MIDIDataset
+        self.dataset_cls = M4SingerDataset
 
     def build_tts_model(self):
         if hparams.get('use_midi') is not None and hparams['use_midi']:
@@ -381,7 +418,7 @@ class AuxDecoderMIDITask(FastSpeech2Task):
 
         output = model(txt_tokens, mel2ph=mel2ph, spk_embed=spk_embed,
                        ref_mels=target, f0=f0, uv=uv, energy=energy, infer=False, pitch_midi=sample['pitch_midi'],
-                       midi_dur=sample.get('midi_dur'), is_slur=sample.get('is_slur'),)
+                       midi_dur=sample.get('midi_dur'), is_slur=sample.get('is_slur'))
 
         losses = {}
         self.add_mel_loss(output['mel_out'], target, losses)
@@ -411,14 +448,13 @@ class AuxDecoderMIDITask(FastSpeech2Task):
             is_sil = is_sil | (txt_tokens == self.phone_encoder.encode(p)[0])
         is_sil = is_sil.float()  # [B, T_txt]
 
-        if hparams['lambda_ph_dur'] > 0:
-            # phone duration loss
-            if hparams['dur_loss'] == 'mse':
-                losses['pdur'] = F.mse_loss(dur_pred, (dur_gt + 1).log(), reduction='none')
-                losses['pdur'] = (losses['pdur'] * nonpadding).sum() / nonpadding.sum()
-                dur_pred = (dur_pred.exp() - 1).clamp(min=0)
-            else:
-                raise NotImplementedError
+        # phone duration loss
+        if hparams['dur_loss'] == 'mse':
+            losses['pdur'] = F.mse_loss(dur_pred, (dur_gt + 1).log(), reduction='none')
+            losses['pdur'] = (losses['pdur'] * nonpadding).sum() / nonpadding.sum()
+            dur_pred = (dur_pred.exp() - 1).clamp(min=0)
+        else:
+            raise NotImplementedError
 
         # use linear scale for sent and word duration
         if hparams['lambda_word_dur'] > 0:

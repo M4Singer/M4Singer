@@ -284,8 +284,7 @@ class MidiSingingBinarizer(SingingBinarizer):
 class ZhSingingBinarizer(ZhBinarizer, SingingBinarizer):
     pass
 
-
-class OpencpopBinarizer(MidiSingingBinarizer):
+class M4SingerBinarizer(MidiSingingBinarizer):
     item2midi = {}
     item2midi_dur = {}
     item2is_slur = {}
@@ -302,25 +301,22 @@ class OpencpopBinarizer(MidiSingingBinarizer):
 
     def load_meta_data(self):
         raw_data_dir = hparams['raw_data_dir']
-        # meta_midi = json.load(open(os.path.join(raw_data_dir, 'meta.json')))   # [list of dict]
-        utterance_labels = open(os.path.join(raw_data_dir, 'transcriptions.txt')).readlines()
+        song_items = json.load(open(os.path.join(raw_data_dir, 'meta.json')))  # [list of dict]
+        for song_item in song_items:
+            item_name = raw_item_name = song_item['item_name']
+            singer, song_name, sent_id = item_name.split("#")
+            self.item2wavfn[item_name] = f'{raw_data_dir}/{singer}#{song_name}/{sent_id}.wav'
+            self.item2txt[item_name] = song_item['txt']
 
-        for utterance_label in utterance_labels:
-            song_info = utterance_label.split('|')
-            item_name = raw_item_name = song_info[0]
-            self.item2wavfn[item_name] = f'{raw_data_dir}/wavs/{item_name}.wav'
-            self.item2txt[item_name] = song_info[1]
+            self.item2ph[item_name] = ' '.join(song_item['phs'])
+            self.item2ph_durs[item_name] = song_item['ph_dur']
 
-            self.item2ph[item_name] = song_info[2]
-            # self.item2wdb[item_name] = list(np.nonzero([1 if x in ALL_YUNMU + ['AP', 'SP'] else 0 for x in song_info[2].split()])[0])
-            self.item2wdb[item_name] = [1 if x in ALL_YUNMU + ['AP', 'SP'] else 0 for x in song_info[2].split()]
-            self.item2ph_durs[item_name] = [float(x) for x in song_info[5].split(" ")]
-
-            self.item2midi[item_name] = [librosa.note_to_midi(x.split("/")[0]) if x != 'rest' else 0
-                                   for x in song_info[3].split(" ")]
-            self.item2midi_dur[item_name] = [float(x) for x in song_info[4].split(" ")]
-            self.item2is_slur[item_name] = [int(x) for x in song_info[6].split(" ")]
-            self.item2spk[item_name] = 'opencpop'
+            self.item2midi[item_name] = song_item['notes']
+            self.item2midi_dur[item_name] = song_item['notes_dur']
+            self.item2is_slur[item_name] = song_item['is_slur']
+            self.item2wdb[item_name] = [1 if (0 < i < len(song_item['phs']) - 1 and p in ALL_YUNMU + ['<SP>', '<AP>'])\
+                                        or i == len(song_item['phs']) - 1 else 0 for i, p in enumerate(song_item['phs'])]
+            self.item2spk[item_name] = singer
 
         print('spkers: ', set(self.item2spk.values()))
         self.item_names = sorted(list(self.item2txt.keys()))
@@ -330,17 +326,17 @@ class OpencpopBinarizer(MidiSingingBinarizer):
         self._train_item_names, self._test_item_names = self.split_train_test_set(self.item_names)
 
     @staticmethod
-    def get_pitch(wav_fn, wav, spec, ph, res):
+    def get_pitch(item_name, wav, spec, ph, res):
         wav_suffix = '.wav'
         # midi_suffix = '.mid'
         wav_dir = 'wavs'
         f0_dir = 'text_f0_align'
 
-        item_name = os.path.splitext(os.path.basename(wav_fn))[0]
-        res['pitch_midi'] = np.asarray(OpencpopBinarizer.item2midi[item_name])
-        res['midi_dur'] = np.asarray(OpencpopBinarizer.item2midi_dur[item_name])
-        res['is_slur'] = np.asarray(OpencpopBinarizer.item2is_slur[item_name])
-        res['word_boundary'] = np.asarray(OpencpopBinarizer.item2wdb[item_name])
+        #item_name = os.path.splitext(os.path.basename(wav_fn))[0]
+        res['pitch_midi'] = np.asarray(M4SingerBinarizer.item2midi[item_name])
+        res['midi_dur'] = np.asarray(M4SingerBinarizer.item2midi_dur[item_name])
+        res['is_slur'] = np.asarray(M4SingerBinarizer.item2is_slur[item_name])
+        res['word_boundary'] = np.asarray(M4SingerBinarizer.item2wdb[item_name])
         assert res['pitch_midi'].shape == res['midi_dur'].shape == res['is_slur'].shape, (res['pitch_midi'].shape, res['midi_dur'].shape, res['is_slur'].shape)
 
         # gt f0.
@@ -379,7 +375,7 @@ class OpencpopBinarizer(MidiSingingBinarizer):
         }
         try:
             if binarization_args['with_f0']:
-                cls.get_pitch(wav_fn, wav, mel, ph, res)
+                cls.get_pitch(item_name, wav, mel, ph, res)
             if binarization_args['with_txt']:
                 try:
                     phone_encoded = res['phone'] = encoder.encode(ph)
@@ -387,12 +383,11 @@ class OpencpopBinarizer(MidiSingingBinarizer):
                     traceback.print_exc()
                     raise BinarizationError(f"Empty phoneme")
                 if binarization_args['with_align']:
-                    cls.get_align(OpencpopBinarizer.item2ph_durs[item_name], mel, phone_encoded, res)
+                    cls.get_align(M4SingerBinarizer.item2ph_durs[item_name], mel, phone_encoded, res)
         except BinarizationError as e:
             print(f"| Skip item ({e}). item_name: {item_name}, wav_fn: {wav_fn}")
             return None
         return res
-
 
 if __name__ == "__main__":
     SingingBinarizer().process()

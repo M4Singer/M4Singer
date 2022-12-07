@@ -1,13 +1,19 @@
+import glob
+import re
 import subprocess
-import traceback
 from datetime import datetime
-from functools import wraps
-from torch.utils.tensorboard import SummaryWriter
+
+import matplotlib
+
+matplotlib.use('Agg')
+
 from utils.hparams import hparams, set_hparams
 import random
 import sys
 import numpy as np
-from utils.trainer import Trainer
+import torch.distributed as dist
+from pytorch_lightning.loggers import TensorBoardLogger
+from utils.pl_utils import LatestModelCheckpoint, BaseTrainer, data_loader, DDP
 from torch import nn
 import torch.utils.data
 import utils
@@ -19,33 +25,6 @@ torch.multiprocessing.set_sharing_strategy(os.getenv('TORCH_SHARE_STRATEGY', 'fi
 log_format = '%(asctime)s %(message)s'
 logging.basicConfig(stream=sys.stdout, level=logging.INFO,
                     format=log_format, datefmt='%m/%d %I:%M:%S %p')
-
-
-def data_loader(fn):
-    """
-    Decorator to make any fx with this use the lazy property
-    :param fn:
-    :return:
-    """
-
-    wraps(fn)
-    attr_name = '_lazy_' + fn.__name__
-
-    def _get_data_loader(self):
-        try:
-            value = getattr(self, attr_name)
-        except AttributeError:
-            try:
-                value = fn(self)  # Lazy evaluation, done only once.
-            except AttributeError as e:
-                # Guard against AttributeError suppression. (Issue #142)
-                traceback.print_exc()
-                error = f'{fn.__name__}: An AttributeError was encountered: ' + str(e)
-                raise RuntimeError(error) from e
-            setattr(self, attr_name, value)  # Memoize evaluation.
-        return value
-
-    return _get_data_loader
 
 
 class BaseDataset(torch.utils.data.Dataset):
@@ -85,6 +64,7 @@ class BaseDataset(torch.utils.data.Dataset):
             indices = np.random.permutation(len(self))
             if self.sort_by_len:
                 indices = indices[np.argsort(np.array(self._sizes)[indices], kind='mergesort')]
+                # 先random, 然后稳定排序, 保证排序后同长度的数据顺序是依照random permutation的 (被其随机打乱).
         else:
             indices = np.arange(len(self))
         return indices
@@ -97,58 +77,40 @@ class BaseDataset(torch.utils.data.Dataset):
 class BaseTask(nn.Module):
     def __init__(self, *args, **kwargs):
         # dataset configs
-        super(BaseTask, self).__init__()
+        super(BaseTask, self).__init__(*args, **kwargs)
         self.current_epoch = 0
         self.global_step = 0
+        self.loaded_optimizer_states_dict = {}
         self.trainer = None
+        self.logger = None
+        self.on_gpu = False
+        self.use_dp = False
         self.use_ddp = False
-        self.gradient_clip_val = hparams['clip_grad_norm']
+        self.example_input_array = None
+
+        self.max_tokens = hparams['max_tokens']
+        self.max_sentences = hparams['max_sentences']
+        self.max_eval_tokens = hparams['max_eval_tokens']
+        if self.max_eval_tokens == -1:
+            hparams['max_eval_tokens'] = self.max_eval_tokens = self.max_tokens
+        self.max_eval_sentences = hparams['max_eval_sentences']
+        if self.max_eval_sentences == -1:
+            hparams['max_eval_sentences'] = self.max_eval_sentences = self.max_sentences
+
         self.model = None
         self.training_losses_meter = None
-        self.logger = None
 
-    ######################
-    # build model, dataloaders, optimizer, scheduler and tensorboard
-    ######################
+    ###########
+    # Training, validation and testing
+    ###########
     def build_model(self):
         raise NotImplementedError
 
-    @data_loader
-    def train_dataloader(self):
-        raise NotImplementedError
-
-    @data_loader
-    def test_dataloader(self):
-        raise NotImplementedError
-
-    @data_loader
-    def val_dataloader(self):
-        raise NotImplementedError
-
-    def build_scheduler(self, optimizer):
-        raise NotImplementedError
-
-    def build_optimizer(self, model):
-        raise NotImplementedError
-
-    def configure_optimizers(self):
-        optm = self.build_optimizer(self.model)
-        self.scheduler = self.build_scheduler(optm)
-        if isinstance(optm, (list, tuple)):
-            return optm
-        return [optm]
-
-    def build_tensorboard(self, save_dir, name, version, **kwargs):
-        root_dir = os.path.join(save_dir, name)
-        os.makedirs(root_dir, exist_ok=True)
-        log_dir = os.path.join(root_dir, "version_" + str(version))
-        self.logger = SummaryWriter(log_dir=log_dir, **kwargs)
-
-    ######################
-    # training
-    ######################
-    def on_train_start(self):
-        pass
+    def load_ckpt(self, ckpt_base_dir, current_model_name=None, model_name='model', force=True, strict=True):
+        # This function is updated on 2021.12.13
+        if current_model_name is None:
+            current_model_name = model_name
+        utils.load_ckpt(self.__getattr__(current_model_name), ckpt_base_dir, current_model_name, force, strict)
 
     def on_epoch_start(self):
         self.training_losses_meter = {'total_loss': utils.AvgrageMeter()}
@@ -163,13 +125,6 @@ class BaseTask(nn.Module):
         raise NotImplementedError
 
     def training_step(self, sample, batch_idx, optimizer_idx=-1):
-        """
-
-        :param sample:
-        :param batch_idx:
-        :param optimizer_idx:
-        :return: {'loss': torch.Tensor, 'progress_bar': dict, 'tb_log': dict}
-        """
         loss_ret = self._training_step(sample, batch_idx, optimizer_idx)
         self.opt_idx = optimizer_idx
         if loss_ret is None:
@@ -184,7 +139,7 @@ class BaseTask(nn.Module):
         self.training_losses_meter['total_loss'].update(total_loss.item())
 
         try:
-            log_outputs['lr'] = self.scheduler.get_last_lr()
+            log_outputs['lr'] = self.scheduler.get_lr()
             if isinstance(log_outputs['lr'], list):
                 log_outputs['lr'] = log_outputs['lr'][0]
         except:
@@ -196,27 +151,21 @@ class BaseTask(nn.Module):
         return {
             'loss': total_loss,
             'progress_bar': progress_bar_log,
-            'tb_log': tb_log
+            'log': tb_log
         }
 
-    def on_before_optimization(self):
-        if self.gradient_clip_val > 0:
-            torch.nn.utils.clip_grad_norm_(self.parameters(), self.gradient_clip_val)
-
-    def on_after_optimization(self, epoch, batch_idx, optimizer, optimizer_idx):
+    def optimizer_step(self, epoch, batch_idx, optimizer, optimizer_idx):
+        optimizer.step()
+        optimizer.zero_grad()
         if self.scheduler is not None:
             self.scheduler.step(self.global_step // hparams['accumulate_grad_batches'])
 
     def on_epoch_end(self):
         loss_outputs = {k: round(v.avg, 4) for k, v in self.training_losses_meter.items()}
-        print(f"Epoch {self.current_epoch} ended. Steps: {self.global_step}. {loss_outputs}")
+        print(f"\n==============\n "
+              f"Epoch {self.current_epoch} ended. Steps: {self.global_step}. {loss_outputs}"
+              f"\n==============\n")
 
-    def on_train_end(self):
-        pass
-
-    ######################
-    # validation
-    ######################
     def validation_step(self, sample, batch_idx):
         """
 
@@ -236,15 +185,25 @@ class BaseTask(nn.Module):
 
     def validation_end(self, outputs):
         loss_output = self._validation_end(outputs)
-        print(f"| Valid results: {loss_output}")
+        print(f"\n==============\n "
+              f"valid results: {loss_output}"
+              f"\n==============\n")
         return {
-            'tb_log': {f'val/{k}': v for k, v in loss_output.items()},
+            'log': {f'val/{k}': v for k, v in loss_output.items()},
             'val_loss': loss_output['total_loss']
         }
 
-    ######################
-    # testing
-    ######################
+    def build_scheduler(self, optimizer):
+        raise NotImplementedError
+
+    def build_optimizer(self, model):
+        raise NotImplementedError
+
+    def configure_optimizers(self):
+        optm = self.build_optimizer(self.model)
+        self.scheduler = self.build_scheduler(optm)
+        return [optm]
+
     def test_start(self):
         pass
 
@@ -254,49 +213,148 @@ class BaseTask(nn.Module):
     def test_end(self, outputs):
         return self.validation_end(outputs)
 
-    ######################
-    # utils
-    ######################
-    def load_ckpt(self, ckpt_base_dir, current_model_name=None, model_name='model', force=True, strict=True):
-        if current_model_name is None:
-            current_model_name = model_name
-        utils.load_ckpt(self.__getattr__(current_model_name), ckpt_base_dir, current_model_name, force, strict)
+    ###########
+    # Running configuration
+    ###########
 
-    ######################
-    # start training/testing
-    ######################
-    def start(self):
+    @classmethod
+    def start(cls):
         set_hparams()
         os.environ['MASTER_PORT'] = str(random.randint(15000, 30000))
         random.seed(hparams['seed'])
         np.random.seed(hparams['seed'])
+        task = cls()
         work_dir = hparams['work_dir']
-        trainer = Trainer(
-            work_dir=work_dir,
-            val_check_interval=hparams['val_check_interval'],
-            tb_log_interval=hparams['tb_log_interval'],
-            max_updates=hparams['max_updates'],
-            num_sanity_val_steps=hparams['num_sanity_val_steps'] if not hparams['validate'] else 10000,
-            accumulate_grad_batches=hparams['accumulate_grad_batches'],
-            print_nan_grads=hparams['print_nan_grads'],
-            resume_from_checkpoint=hparams.get('resume_from_checkpoint', 0),
-            amp=hparams['amp'],
-            # save ckpt
-            monitor_key=hparams['valid_monitor_key'],
-            monitor_mode=hparams['valid_monitor_mode'],
-            num_ckpt_keep=hparams['num_ckpt_keep'],
-            save_best=hparams['save_best'],
-            seed=hparams['seed'],
-            debug=hparams['debug']
-        )
+        trainer = BaseTrainer(checkpoint_callback=LatestModelCheckpoint(
+                                  filepath=work_dir,
+                                  verbose=True,
+                                  monitor='val_loss',
+                                  mode='min',
+                                  num_ckpt_keep=hparams['num_ckpt_keep'],
+                                  save_best=hparams['save_best'],
+                                  period=1 if hparams['save_ckpt'] else 100000
+                              ),
+                              logger=TensorBoardLogger(
+                                  save_dir=work_dir,
+                                  name='lightning_logs',
+                                  version='lastest'
+                              ),
+                              gradient_clip_val=hparams['clip_grad_norm'],
+                              val_check_interval=hparams['val_check_interval'],
+                              row_log_interval=hparams['log_interval'],
+                              max_updates=hparams['max_updates'],
+                              num_sanity_val_steps=hparams['num_sanity_val_steps'] if not hparams[
+                                  'validate'] else 10000,
+                              accumulate_grad_batches=hparams['accumulate_grad_batches'])
         if not hparams['infer']:  # train
             t = datetime.now().strftime('%Y%m%d%H%M%S')
             code_dir = f'{work_dir}/codes/{t}'
             subprocess.check_call(f'mkdir -p "{code_dir}"', shell=True)
             for c in hparams['save_codes']:
-                if os.path.exists(c):
-                    subprocess.check_call(f'cp -r "{c}" "{code_dir}/"', shell=True)
+                subprocess.check_call(f'cp -r "{c}" "{code_dir}/"', shell=True)
             print(f"| Copied codes to {code_dir}.")
-            trainer.fit(self)
+            trainer.checkpoint_callback.task = task
+            trainer.fit(task)
         else:
-            trainer.test(self)
+            trainer.test(task)
+
+    def configure_ddp(self, model, device_ids):
+        model = DDP(
+            model,
+            device_ids=device_ids,
+            find_unused_parameters=True
+        )
+        if dist.get_rank() != 0 and not hparams['debug']:
+            sys.stdout = open(os.devnull, "w")
+            sys.stderr = open(os.devnull, "w")
+        random.seed(hparams['seed'])
+        np.random.seed(hparams['seed'])
+        return model
+
+    def training_end(self, *args, **kwargs):
+        return None
+
+    def init_ddp_connection(self, proc_rank, world_size):
+        set_hparams(print_hparams=False)
+        # guarantees unique ports across jobs from same grid search
+        default_port = 12910
+        # if user gave a port number, use that one instead
+        try:
+            default_port = os.environ['MASTER_PORT']
+        except Exception:
+            os.environ['MASTER_PORT'] = str(default_port)
+
+        # figure out the root node addr
+        root_node = '127.0.0.2'
+        root_node = self.trainer.resolve_root_node_address(root_node)
+        os.environ['MASTER_ADDR'] = root_node
+        dist.init_process_group('nccl', rank=proc_rank, world_size=world_size)
+
+    @data_loader
+    def train_dataloader(self):
+        return None
+
+    @data_loader
+    def test_dataloader(self):
+        return None
+
+    @data_loader
+    def val_dataloader(self):
+        return None
+
+    def on_load_checkpoint(self, checkpoint):
+        pass
+
+    def on_save_checkpoint(self, checkpoint):
+        pass
+
+    def on_sanity_check_start(self):
+        pass
+
+    def on_train_start(self):
+        pass
+
+    def on_train_end(self):
+        pass
+
+    def on_batch_start(self, batch):
+        pass
+
+    def on_batch_end(self):
+        pass
+
+    def on_pre_performance_check(self):
+        pass
+
+    def on_post_performance_check(self):
+        pass
+
+    def on_before_zero_grad(self, optimizer):
+        pass
+
+    def on_after_backward(self):
+        pass
+
+    def backward(self, loss, optimizer):
+        loss.backward()
+
+    def grad_norm(self, norm_type):
+        results = {}
+        total_norm = 0
+        for name, p in self.named_parameters():
+            if p.requires_grad:
+                try:
+                    param_norm = p.grad.data.norm(norm_type)
+                    total_norm += param_norm ** norm_type
+                    norm = param_norm ** (1 / norm_type)
+
+                    grad = round(norm.data.cpu().numpy().flatten()[0], 3)
+                    results['grad_{}_norm_{}'.format(norm_type, name)] = grad
+                except Exception:
+                    # this param had no grad
+                    pass
+
+        total_norm = total_norm ** (1. / norm_type)
+        grad = round(total_norm.data.cpu().numpy().flatten()[0], 3)
+        results['grad_{}_norm_total'.format(norm_type)] = grad
+        return results

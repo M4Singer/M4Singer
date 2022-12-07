@@ -56,7 +56,7 @@ class HifiGAN(PWG):
         device = self.device
         with torch.no_grad():
             c = torch.FloatTensor(mel).unsqueeze(0).transpose(2, 1).to(device)
-            with utils.Timer('hifigan'):
+            with utils.Timer('hifigan', print_time=hparams['profile_infer']):
                 f0 = kwargs.get('f0')
                 if f0 is not None and hparams.get('use_nsf'):
                     f0 = torch.FloatTensor(f0[None, :]).to(device)

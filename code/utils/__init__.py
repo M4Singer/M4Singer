@@ -1,22 +1,17 @@
+import glob
+import logging
+import re
 import time
+from collections import defaultdict
+import os
 import sys
+import shutil
 import types
 import numpy as np
 import torch
-import torch.distributed as dist
-from utils.ckpt_utils import load_ckpt
 import torch.nn.functional as F
-
-def reduce_tensors(metrics):
-    new_metrics = {}
-    for k, v in metrics.items():
-        if isinstance(v, torch.Tensor):
-            dist.all_reduce(v)
-            v = v / dist.get_world_size()
-        if type(v) is dict:
-            v = reduce_tensors(v)
-        new_metrics[k] = v
-    return new_metrics
+import torch.distributed as dist
+from torch import nn
 
 
 def tensors_to_scalars(metrics):
@@ -28,50 +23,6 @@ def tensors_to_scalars(metrics):
             v = tensors_to_scalars(v)
         new_metrics[k] = v
     return new_metrics
-
-
-def tensors_to_np(metrics):
-    new_metrics = {}
-    for k, v in metrics.items():
-        if isinstance(v, torch.Tensor):
-            v = v.numpy()
-        if type(v) is dict:
-            v = tensors_to_scalars(v)
-        new_metrics[k] = v
-    return new_metrics
-
-
-def move_to_cpu(tensors):
-    ret = {}
-    for k, v in tensors.items():
-        if isinstance(v, torch.Tensor):
-            v = v.cpu()
-        if type(v) is dict:
-            v = move_to_cpu(v)
-        ret[k] = v
-    return ret
-
-
-def move_to_cuda(batch, gpu_id=0):
-    # base case: object can be directly moved using `cuda` or `to`
-    if callable(getattr(batch, 'cuda', None)):
-        return batch.cuda(gpu_id, non_blocking=True)
-    elif callable(getattr(batch, 'to', None)):
-        return batch.to(torch.device('cuda', gpu_id), non_blocking=True)
-    elif isinstance(batch, list):
-        for i, x in enumerate(batch):
-            batch[i] = move_to_cuda(x, gpu_id)
-        return batch
-    elif isinstance(batch, tuple):
-        batch = list(batch)
-        for i, x in enumerate(batch):
-            batch[i] = move_to_cuda(x, gpu_id)
-        return tuple(batch)
-    elif isinstance(batch, dict):
-        for k, v in batch.items():
-            batch[k] = move_to_cuda(v, gpu_id)
-        return batch
-    return batch
 
 
 class AvgrageMeter(object):
@@ -170,7 +121,6 @@ def batch_by_size(
         num_tokens = num_tokens_fn(idx)
         sample_lens.append(num_tokens)
         sample_len = max(sample_len, num_tokens)
-
         assert sample_len <= max_tokens, (
             "sentence at index {} of size {} exceeds max_tokens "
             "limit of {}!".format(idx, sample_len, max_tokens)
@@ -191,6 +141,26 @@ def batch_by_size(
         batches.append(batch)
     return batches
 
+
+def make_positions(tensor, padding_idx):
+    """Replace non-padding symbols with their position numbers.
+
+    Position numbers begin at padding_idx+1. Padding symbols are ignored.
+    """
+    # The series of casts and type-conversions here are carefully
+    # balanced to both work with ONNX export and XLA. In particular XLA
+    # prefers ints, cumsum defaults to output longs, and ONNX doesn't know
+    # how to handle the dtype kwarg in cumsum.
+    mask = tensor.ne(padding_idx).int()
+    return (
+                   torch.cumsum(mask, dim=1).type_as(mask) * mask
+           ).long() + padding_idx
+
+
+def softmax(x, dim):
+    return F.softmax(x, dim=dim, dtype=torch.float32)
+
+
 def unpack_dict_to_list(samples):
     samples_ = []
     bsz = samples.get('outputs').size(0)
@@ -203,6 +173,40 @@ def unpack_dict_to_list(samples):
                 pass
         samples_.append(res)
     return samples_
+
+
+def load_ckpt(cur_model, ckpt_base_dir, prefix_in_ckpt='model', force=True, strict=True):
+    if os.path.isfile(ckpt_base_dir):
+        base_dir = os.path.dirname(ckpt_base_dir)
+        checkpoint_path = [ckpt_base_dir]
+    else:
+        base_dir = ckpt_base_dir
+        checkpoint_path = sorted(glob.glob(f'{base_dir}/model_ckpt_steps_*.ckpt'), key=
+        lambda x: int(re.findall(f'{base_dir}/model_ckpt_steps_(\d+).ckpt', x)[0]))
+    if len(checkpoint_path) > 0:
+        checkpoint_path = checkpoint_path[-1]
+        state_dict = torch.load(checkpoint_path, map_location="cpu")["state_dict"]
+        state_dict = {k[len(prefix_in_ckpt) + 1:]: v for k, v in state_dict.items()
+                      if k.startswith(f'{prefix_in_ckpt}.')}
+        if not strict:
+            cur_model_state_dict = cur_model.state_dict()
+            unmatched_keys = []
+            for key, param in state_dict.items():
+                if key in cur_model_state_dict:
+                    new_param = cur_model_state_dict[key]
+                    if new_param.shape != param.shape:
+                        unmatched_keys.append(key)
+                        print("| Unmatched keys: ", key, new_param.shape, param.shape)
+            for key in unmatched_keys:
+                del state_dict[key]
+        cur_model.load_state_dict(state_dict, strict=strict)
+        print(f"| load '{prefix_in_ckpt}' from '{checkpoint_path}'.")
+    else:
+        e_msg = f"| ckpt not found in {base_dir}."
+        if force:
+            assert False, e_msg
+        else:
+            print(e_msg)
 
 
 def remove_padding(x, padding_idx=0):
@@ -218,25 +222,19 @@ def remove_padding(x, padding_idx=0):
 class Timer:
     timer_map = {}
 
-    def __init__(self, name, enable=False):
+    def __init__(self, name, print_time=False):
         if name not in Timer.timer_map:
             Timer.timer_map[name] = 0
         self.name = name
-        self.enable = enable
+        self.print_time = print_time
 
     def __enter__(self):
-        if self.enable:
-            if torch.cuda.is_available():
-                torch.cuda.synchronize()
-            self.t = time.time()
+        self.t = time.time()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.enable:
-            if torch.cuda.is_available():
-                torch.cuda.synchronize()
-            Timer.timer_map[self.name] += time.time() - self.t
-            if self.enable:
-                print(self.name, Timer.timer_map[self.name])
+        Timer.timer_map[self.name] += time.time() - self.t
+        if self.print_time:
+            print(self.name, Timer.timer_map[self.name])
 
 
 def print_arch(model, model_name='model'):
@@ -250,6 +248,3 @@ def num_params(model, print_out=True, model_name="model"):
     if print_out:
         print(f'| {model_name} Trainable Parameters: %.3fM' % parameters)
     return parameters
-
-def softmax(x, dim):
-    return F.softmax(x, dim=dim, dtype=torch.float32)

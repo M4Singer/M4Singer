@@ -137,12 +137,11 @@ class PitchExtractionTask(FastSpeech2Task):
             return losses, output
 
     def plot_pitch(self, batch_idx, model_out, sample):
-        pass
-        #gt_f0 = denorm_f0(sample['f0'], sample['uv'], hparams)
-        #self.logger.experiment.add_figure(
-        #    f'f0_{batch_idx}',
-        #    f0_to_figure(gt_f0[0], None, model_out['f0_denorm_pred'][0]),
-        #    self.global_step)
+        gt_f0 = denorm_f0(sample['f0'], sample['uv'], hparams)
+        self.logger.experiment.add_figure(
+            f'f0_{batch_idx}',
+            f0_to_figure(gt_f0[0], None, model_out['f0_denorm_pred'][0]),
+            self.global_step)
 
     def add_pitch_loss(self, output, sample, losses):
         # mel2ph = sample['mel2ph']  # [B, T_s]

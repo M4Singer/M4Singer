@@ -5,6 +5,7 @@ binarization_args:
   with_wav: true
   with_spk_embed: false
   with_align: false
+test_input_dir: ''
 
 ###########
 # train and eval
@@ -28,6 +29,7 @@ window: "hann"           # Window function.
 num_mels: 80             # Number of mel basis.
 fmin: 80                 # Minimum freq in mel basis calculation.
 fmax: 7600               # Maximum frequency in mel basis calculation.
+format: "hdf5"           # Feature file format. "npy" or "hdf5" is supported.
 
 ###########################################################
 #         GENERATOR NETWORK ARCHITECTURE SETTING          #
@@ -52,7 +54,7 @@ generator_params:
   upsample_params:                      # Upsampling network parameters.
     upsample_scales: [4, 4, 4, 4]     # Upsampling scales. Prodcut of these must be the same as hop size.
   use_pitch_embed: false
-  use_nsf: false
+
 ###########################################################
 #       DISCRIMINATOR NETWORK ARCHITECTURE SETTING        #
 ###########################################################
@@ -68,8 +70,6 @@ discriminator_params:
   nonlinear_activation: "LeakyReLU" # Nonlinear function after each conv.
   nonlinear_activation_params:      # Nonlinear function parameters
     negative_slope: 0.2           # Alpha in LeakyReLU.
-rerun_gen: true
-freq_disc: false
 
 ###########################################################
 #                   STFT LOSS SETTING                     #

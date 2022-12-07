@@ -78,3 +78,4 @@ def mel_spectrogram(y, hparams, center=False, complex=False):
         B, C, T, _ = spec.shape
         spec = spec.transpose(1, 2)  # [B, T, n_fft, 2]
     return spec
+

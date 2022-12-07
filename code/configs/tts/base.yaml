@@ -45,7 +45,7 @@ min_level_db: -100
 num_spk: 1
 mel_vmin: -6
 mel_vmax: 1.5
-ds_workers: 20
+ds_workers: 4
 
 #########
 # model

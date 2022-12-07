@@ -1,15 +1,27 @@
-#  Audio Samples and Benchmarks
-**Click [here](https://m4singer.github.io/) to enter our demo page.**
+#  M4Singer: A Multi-Style, Multi-Singer and Musical Score Provided Mandarin Singing Corpus (NIPS 2022)
 
-Not only are there **samples** of audio and musical scores, but also **various benchmarks** built with M4Singer. 
+## Audio Samples and Benchmarks
 
-Moreover, we also provide **checkpoints** for our benchmarks, click [here](https://drive.google.com/drive/folders/1ZkxbZTFjHroNpxmXuR3sQIgmT1mObNgw?usp=sharing) to download.
 
-Come and enjoy the journey of music!
-#  Apply for M4Singer
-We adopt the application form for data management (see _*How can we get M4Singer?*_ in the paper for the reasons).
+Click [![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-blue?label=Demo)](https://huggingface.co/spaces/zlc99/M4Singer)
+ to use M4Singer for singing voice synthesis and preview the timbres of multiple singers. 
 
-Data acquisition proceeds through the following steps:
-- Send application form to apply4m4singer@gmail.com (see [apply form](https://github.com/M4Singer/M4Singer/blob/master/apply_form.md));
-- Application gets approved;
-- Get download link.
+We provide link of [Google Drive](https://drive.google.com/file/d/1xC37E59EWRRFFLdG3aJkVqwtLDgtFNqW/view?usp=share_link) here for free use.
+Hope our data is helpful for your research.
+
+**Please note that, if you are using M4Singer, it means that you have accepted the terms of [license](https://github.com/M4Singer/M4Singer/blob/master/dataset_license.md).**
+
+
+## Citations
+  If our work is useful for your research, please consider citing:
+  ```bibtex
+  @inproceedings{
+    zhang2022msinger,
+    title={M4Singer: A Multi-Style, Multi-Singer and Musical Score Provided Mandarin Singing Corpus},
+    author={Lichao Zhang and Ruiqi Li and Shoutong Wang and Liqun Deng and Jinglin Liu and Yi Ren and Jinzheng He and Rongjie Huang and Jieming Zhu and Xiao Chen and Zhou Zhao},
+    booktitle={Thirty-sixth Conference on Neural Information Processing Systems Datasets and Benchmarks Track},
+    year={2022},
+  }
+  ```
+
+  ![visitors](https://visitor-badge.laobi.icu/badge?page_id=M4Singer/M4Singer)

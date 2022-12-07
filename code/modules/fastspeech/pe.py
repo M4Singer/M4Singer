@@ -119,7 +119,7 @@ class ConvStacks(nn.Module):
 class PitchExtractor(nn.Module):
     def __init__(self, n_mel_bins=80, conv_layers=2):
         super().__init__()
-        self.hidden_size = hparams['hidden_size']
+        self.hidden_size = 256
         self.predictor_hidden = hparams['predictor_hidden'] if hparams['predictor_hidden'] > 0 else self.hidden_size
         self.conv_layers = conv_layers
 
@@ -129,7 +129,7 @@ class PitchExtractor(nn.Module):
                     idim=self.hidden_size, n_chans=self.hidden_size, odim=self.hidden_size, n_layers=self.conv_layers)
         self.pitch_predictor = PitchPredictor(
             self.hidden_size, n_chans=self.predictor_hidden,
-            n_layers=5, dropout_rate=0.1, odim=2,
+            n_layers=5, dropout_rate=0.5, odim=2,
             padding=hparams['ffn_padding'], kernel_size=hparams['predictor_kernel'])
 
     def forward(self, mel_input=None):

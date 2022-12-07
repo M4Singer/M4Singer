@@ -113,12 +113,10 @@ class DiffSpeechTask(DiffFsTask):
         gt_wav = gt_wav[0].cpu().numpy()
         wav_out = wav_out[0].cpu().numpy()
         gt_f0 = gt_f0[0].cpu().numpy()
-        if hparams['use_pitch_embed']:
-            f0 = f0[0].cpu().numpy()
+        f0 = f0[0].cpu().numpy()
         if is_mel:
             gt_wav = self.vocoder.spec2wav(gt_wav, f0=gt_f0)
             wav_out = self.vocoder.spec2wav(wav_out, f0=f0)
-
-        self.logger.add_audio(f'gt_{batch_idx}', gt_wav, sample_rate=hparams['audio_sample_rate'], global_step=self.global_step)
-        self.logger.add_audio(f'wav_{batch_idx}', wav_out, sample_rate=hparams['audio_sample_rate'], global_step=self.global_step)
+        self.logger.experiment.add_audio(f'gt_{batch_idx}', gt_wav, sample_rate=hparams['audio_sample_rate'], global_step=self.global_step)
+        self.logger.experiment.add_audio(f'wav_{batch_idx}', wav_out, sample_rate=hparams['audio_sample_rate'], global_step=self.global_step)
 

@@ -15,11 +15,11 @@ predictor_kernel: 5
 predictor_layers: 2
 dur_predictor_kernel: 3
 dur_predictor_layers: 2
-predictor_dropout: 0.7
+predictor_dropout: 0.5
 
 # pitch and energy
 use_pitch_embed: true
-pitch_type: frame # frame|ph|cwt
+pitch_type: ph # frame|ph|cwt
 use_uv: true
 cwt_hidden_size: 128
 cwt_layers: 2

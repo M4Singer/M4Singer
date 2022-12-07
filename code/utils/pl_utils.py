@@ -502,7 +502,7 @@ class BaseTrainer:
 
         # single list or tuple
         elif isinstance(optimizers, list) or isinstance(optimizers, tuple):
-            return optimizers, []
+            return optimizers[0], []
 
     def run_pretrain_routine(self, model):
         """Sanity check a few things before starting actual training.
@@ -712,9 +712,10 @@ class BaseTrainer:
                             state[k] = v.cuda(self.root_gpu)
 
         # restore the lr schedulers
-        lr_schedulers = checkpoint['lr_schedulers']
-        for scheduler, lrs_state in zip(self.lr_schedulers, lr_schedulers):
-            scheduler.load_state_dict(lrs_state)
+        if 'lr_schedulers' in checkpoint:
+            lr_schedulers = checkpoint['lr_schedulers']
+            for scheduler, lrs_state in zip(self.lr_schedulers, lr_schedulers):
+                scheduler.load_state_dict(lrs_state)
 
     # --------------------
     # MODEL SAVE CHECKPOINT

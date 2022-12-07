@@ -154,13 +154,17 @@ class HifiGanGenerator(torch.nn.Module):
             x = self.ups[i](x)
             if f0 is not None:
                 x_source = self.noise_convs[i](har_source)
+                x_source = torch.nn.functional.relu(x_source)
+                tmp_shape = x_source.shape[1]
+                x_source = torch.nn.functional.layer_norm(x_source.transpose(1, -1), (tmp_shape, )).transpose(1, -1)
                 x = x + x_source
             xs = None
             for j in range(self.num_kernels):
+                xs_ = self.resblocks[i * self.num_kernels + j](x)
                 if xs is None:
-                    xs = self.resblocks[i * self.num_kernels + j](x)
+                    xs = xs_
                 else:
-                    xs += self.resblocks[i * self.num_kernels + j](x)
+                    xs += xs_
             x = xs / self.num_kernels
         x = F.leaky_relu(x)
         x = self.conv_post(x)
@@ -363,3 +367,4 @@ def generator_loss(disc_outputs):
         loss += l
     loss = loss / len(disc_outputs)
     return loss
+

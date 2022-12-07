@@ -301,5 +301,4 @@ class TokenTextEncoder(TextEncoder):
                 f.write(self._id_to_token[i] + "\n")
 
     def sil_phonemes(self):
-        #print(self._id_to_token.values())
-        return [p for p in self._id_to_token.values() if not (p == ''or p[0].isalpha() or p == 'AP' or p == 'SP')]
+        return [p for p in self._id_to_token.values() if not p[0].isalpha()]

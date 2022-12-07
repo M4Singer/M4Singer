@@ -141,6 +141,7 @@ class BaseBinarizer:
             item['spk_embed'] = voice_encoder.embed_utterance(item['wav']) \
                 if self.binarization_args['with_spk_embed'] else None
             if not self.binarization_args['with_wav'] and 'wav' in item:
+                #print("del wav")
                 del item['wav']
             builder.add_item(item)
             lengths.append(item['len'])
@@ -174,7 +175,8 @@ class BaseBinarizer:
                 try:
                     phone_encoded = res['phone'] = encoder.encode(ph)
                 except:
-                    pass
+                    traceback.print_exc()
+                    raise BinarizationError(f"Empty phoneme")
                 if binarization_args['with_align']:
                     cls.get_align(tg_fn, ph, mel, phone_encoded, res)
         except BinarizationError as e:
