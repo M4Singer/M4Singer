@@ -502,7 +502,7 @@ class BaseTrainer:
 
         # single list or tuple
         elif isinstance(optimizers, list) or isinstance(optimizers, tuple):
-            return optimizers[0], []
+            return optimizers, []
 
     def run_pretrain_routine(self, model):
         """Sanity check a few things before starting actual training.
